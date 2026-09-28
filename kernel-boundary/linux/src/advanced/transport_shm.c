@@ -4,6 +4,8 @@
 #include <stdatomic.h>
 #include <stdio.h>
 #include <sys/mman.h>
+#include <string.h>
+#include <assert.h>
 
 /* Student implementation area. The layout is a suggestion, not a protocol.
  * You may change it; keep transport.h and the common harness contract intact.
@@ -28,7 +30,7 @@ static int initialize(ipc_transport_t *t)
     return 0;
 }
 static int select_end(ipc_transport_t *t, bool server)
-{ (void)t; (void)server; return 0; }
+{ return 0; }
 static int unfinished(void)
 {
     fputs("STUDENT TODO: implement shared-memory data transfer and process-shared notification in transport_shm.c\n", stderr);
@@ -41,22 +43,32 @@ static int request(ipc_transport_t *t, const void *req, void *rep, size_t bytes)
      * copy it to rep, and make the reply buffer reusable without a data race.
      * Design the state machine and memory ordering before filling this in.
      */
-    (void)t; (void)req; (void)rep; (void)bytes;
-    return unfinished();
+    shm_region_t *s = t->state;
+    memcpy(s->request, req, bytes);
+    atomic_store(&s->request_state, 1);
+    while(!atomic_load(&s->reply_state));
+    memcpy(rep, s->reply, bytes);
+    atomic_store(&s->reply_state, 0);
+    return 0;
 }
 static int receive(ipc_transport_t *t, void *req, size_t bytes)
 {
     /* TODO: wait for a published request and copy exactly bytes to req.
      * Decide when the producer may safely reuse its request buffer.
      */
-    (void)t; (void)req; (void)bytes;
-    return unfinished();
+    shm_region_t *s = t->state;
+    while(!atomic_load(&s->request_state));
+    memcpy(req, s->request, bytes);
+    atomic_store(&s->request_state, 0);
+    return 0;
 }
 static int reply(ipc_transport_t *t, const void *rep, size_t bytes)
 {
     /* TODO: publish the server's reply and notify the client. */
-    (void)t; (void)rep; (void)bytes;
-    return unfinished();
+    shm_region_t *s = t->state;
+    memcpy(s->reply, rep, bytes);
+    atomic_store(&s->reply_state, 1);
+    return 0;
 }
 static void destroy(ipc_transport_t *t)
 {

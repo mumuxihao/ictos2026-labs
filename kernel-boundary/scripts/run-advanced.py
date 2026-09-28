@@ -93,7 +93,7 @@ def main():
     parser.add_argument('--samples', type=int, default=51)
     parser.add_argument('--iterations', type=int, default=1000)
     parser.add_argument('--seeds', nargs='+', type=int, default=[1, 17, 2026])
-    parser.add_argument('--timeout', type=float, default=30)
+    parser.add_argument('--timeout', type=float, default=10)
     parser.add_argument('--output', type=Path, help='new directory only; existing results are never overwritten')
     args = parser.parse_args()
     if min(args.check_iterations, args.samples, args.iterations) < 1 or args.timeout <= 0:
