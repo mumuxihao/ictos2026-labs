@@ -6,6 +6,9 @@
 #include <sys/mman.h>
 #include <string.h>
 #include <assert.h>
+#include <linux/futex.h>
+#include <sys/syscall.h>
+#include <unistd.h>
 
 /* Student implementation area. The layout is a suggestion, not a protocol.
  * You may change it; keep transport.h and the common harness contract intact.
@@ -46,7 +49,10 @@ static int request(ipc_transport_t *t, const void *req, void *rep, size_t bytes)
     shm_region_t *s = t->state;
     memcpy(s->request, req, bytes);
     atomic_store(&s->request_state, 1);
-    while(!atomic_load(&s->reply_state));
+    syscall(SYS_futex, &s->request_state, FUTEX_WAKE, 1, NULL, NULL, 0);
+    while(!atomic_load(&s->reply_state)) {
+        syscall(SYS_futex, &s->reply_state, FUTEX_WAIT, 0, NULL, NULL, 0);
+    }
     memcpy(rep, s->reply, bytes);
     atomic_store(&s->reply_state, 0);
     return 0;
@@ -57,7 +63,9 @@ static int receive(ipc_transport_t *t, void *req, size_t bytes)
      * Decide when the producer may safely reuse its request buffer.
      */
     shm_region_t *s = t->state;
-    while(!atomic_load(&s->request_state));
+    while(!atomic_load(&s->request_state)) {
+        syscall(SYS_futex, &s->request_state, FUTEX_WAIT, 0, NULL, NULL, 0);
+    }
     memcpy(req, s->request, bytes);
     atomic_store(&s->request_state, 0);
     return 0;
@@ -68,6 +76,7 @@ static int reply(ipc_transport_t *t, const void *rep, size_t bytes)
     shm_region_t *s = t->state;
     memcpy(s->reply, rep, bytes);
     atomic_store(&s->reply_state, 1);
+    syscall(SYS_futex, &s->reply_state, FUTEX_WAKE, 1, NULL, NULL, 0);
     return 0;
 }
 static void destroy(ipc_transport_t *t)
